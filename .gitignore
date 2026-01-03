@@ -1,0 +1,9 @@
+# Ignore the Terraform runtime directory
+.terraform/
+
+# Ignore state files (contains secrets!)
+*.tfstate
+*.tfstate.backup
+
+# Ignore the terraform executable you downloaded
+*.exe
