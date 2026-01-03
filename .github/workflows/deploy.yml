@@ -1,0 +1,39 @@
+name: Build and Deploy Frontend
+
+on:
+  push:
+    branches: [ "main" ] # Triggers every time you push to the main branch
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Build and Push to ACR
+      run: |
+        # Log into your specific Azure Container Registry
+        az acr login --name boutiqueregistry46199
+        
+        # Build the Docker image using the GitHub commit ID as a version tag
+        docker build -t boutiqueregistry46199.azurecr.io/frontend:${{ github.sha }} ./src/src/frontend
+        
+        # Push the image to your "Storage Dock" (ACR)
+        docker push boutiqueregistry46199.azurecr.io/frontend:${{ github.sha }}
+
+    - name: Set AKS Context
+      uses: azure/aks-set-context@v3
+      with:
+        resource-group: cloud-native-assignment-rg
+        cluster-name: online-boutique-cluster
+
+    - name: Deploy to AKS
+      run: |
+        # Tell the "Manager" (AKS) to use the new image we just built
+        kubectl set image deployment/frontend server=boutiqueregistry46199.azurecr.io/frontend:${{ github.sha }}
