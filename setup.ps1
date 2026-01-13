@@ -32,15 +32,25 @@ kubectl patch service frontend -p "{\`"spec\`": {\`"type\`": \`"LoadBalancer\`"}
 # 4. Handle Redis Integration
 Write-Host "Discovering Azure Redis instance..." -ForegroundColor Cyan
 $REDIS_NAME = az redis list --resource-group cloud-native-assignment-rg --query "[?contains(name, 'boutique-cart-db')].name" -o tsv
-if (-not $REDIS_NAME) { Write-Error "Could not find Redis!"; exit }
-Write-Host "Found Redis: $REDIS_NAME" -ForegroundColor Yellow
-
 $REDIS_KEY = az redis list-keys --name $REDIS_NAME --resource-group cloud-native-assignment-rg --query "primaryKey" -o tsv
 $REDIS_HOST = "$($REDIS_NAME).redis.cache.windows.net:6380"
 
+# Create/Update the secret
 kubectl create secret generic redis-secret --from-literal=redis-password=$REDIS_KEY --dry-run=client -o yaml | kubectl apply -f -
-kubectl set env deployment/cartservice REDIS_ADDR="$($REDIS_HOST)"
-kubectl set env deployment/cartservice REDIS_PASSWORD- --env=REDIS_PASSWORD_SECRET=redis-secret
+
+Write-Host "Wiring CartService to Azure Redis..." -ForegroundColor Cyan
+
+# Remove any existing broken environment variables to start fresh
+kubectl set env deployment/cartservice REDIS_PASSWORD_SECRET- REDIS_PASSWORD- REDIS_ADDR-
+
+# Apply the correct configuration using a clean Patch
+$patchJson = @"
+[
+  {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "REDIS_ADDR", "value": "$REDIS_HOST"}},
+  {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "REDIS_PASSWORD", "valueFrom": {"secretKeyRef": {"name": "redis-secret", "key": "redis-password"}}}}
+]
+"@
+$patchJson | kubectl patch deployment cartservice --type='json' -p $input
 
 # 5. Install Monitoring (Prometheus Stack)
 Write-Host "Installing Prometheus/Grafana Stack..." -ForegroundColor Cyan
