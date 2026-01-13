@@ -1,0 +1,15 @@
+deployment:
+  replicaCount: 1
+  image:
+    repository: nginx
+    tag: "latest"
+
+service:
+  type: LoadBalancer
+  port: 80
+
+config:
+  indexHtml: |
+    <html>
+      <body><h1>Aron's Helm Webserver</h1></body>
+    </html>
