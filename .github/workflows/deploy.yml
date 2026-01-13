@@ -2,40 +2,50 @@ name: Build and Deploy Frontend
 
 on:
   push:
-    branches: [ "main" ] # Triggers every time you push to the main branch
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
+    # 1. First, get the code from the repository
     - name: Checkout Code
       uses: actions/checkout@v4
       with:
         submodules: recursive
         
+    # 2. Log into Azure so we can talk to ACR and AKS
     - name: Azure Login
       uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+    # 3. Discover ACR, Build the image, and Push it
     - name: Build and Push to ACR
       run: |
-        # Log into your specific Azure Container Registry
-        az acr login --name boutiqueregistry46199
+        # Find the registry name dynamically
+        ACR_NAME=$(az acr list --resource-group cloud-native-assignment-rg --query "[?contains(name, 'boutiqueregistry')].name" -o tsv)
+        echo "Found Registry: $ACR_NAME"
         
-        # Build the Docker image using the GitHub commit ID as a version tag
-        docker build -t boutiqueregistry46199.azurecr.io/frontend:${{ github.sha }} ./src/src/frontend
+        az acr login --name $ACR_NAME
         
-        # Push the image to your "Storage Dock" (ACR)
-        docker push boutiqueregistry46199.azurecr.io/frontend:${{ github.sha }}
+        # Build and Push
+        docker build -t ${ACR_NAME}.azurecr.io/frontend:${{ github.sha }} ./src/src/frontend
+        docker push ${ACR_NAME}.azurecr.io/frontend:${{ github.sha }}
+        
+        # Save name for the deployment step
+        echo "ACR_NAME=$ACR_NAME" >> $GITHUB_ENV
 
+    # 4. Connect to your Kubernetes Cluster
     - name: Set AKS Context
       uses: azure/aks-set-context@v3
       with:
         resource-group: cloud-native-assignment-rg
         cluster-name: online-boutique-cluster
 
+    # 5. Update the live application
     - name: Deploy to AKS
       run: |
-        # Tell the "Manager" (AKS) to use the new image we just built
-        kubectl set image deployment/frontend server=boutiqueregistry46199.azurecr.io/frontend:${{ github.sha }}
+        kubectl set image deployment/frontend server=${{ env.ACR_NAME }}.azurecr.io/frontend:${{ github.sha }}
+        kubectl rollout status deployment/frontend
